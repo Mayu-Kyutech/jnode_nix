@@ -3,30 +3,18 @@ from __future__ import print_function
 import nixio as nix
 import numpy as np
 import scipy.io as scio
+# import matplotlib.pyplot as plt
 import os
 import sys
 import argparse
 import glob
+import nixio as nix
 
-
-def write_eeg_hardware_metadata(block, group):
-    src = block.create_source("eeg setup", "eeg.channel_group")
-    group.sources.append(src)
-    block.metadata["hardware"] = nix.S("recording hardware")
-    block.metadata["hardware"]["eeg system"] = nix.S("hardware.eeg")
-    return block.metadata["hardware"]["eeg system"]
-
-
-def write_channel_metadata(section, name, gain=100):
-    section[name] = nix.S("eeg_channel")
-    section[name]["gain"] = gain
-    return section[name]
+from IPython import embed
 
 
 def write_channel_data(block, data, time, sr):
     group = block.create_group("eeg data", "nix.eeg.channels")
-    hw = write_eeg_hardware_metadata(block, group)
-
     dt = np.mean(np.diff(time))
     diff = 1./dt - sr
     use_range = diff > np.finfo(np.float32).eps
@@ -49,8 +37,6 @@ def write_channel_data(block, data, time, sr):
             dim = da.append_sampled_dimension(dt)
         dim.unit = "s"
         dim.label = "time"
-        sec = write_channel_metadata(hw, "channel %d" % (ch + 1), 100+ch)
-        da.metadata = sec
         group.data_arrays.append(da)
     return group
 
@@ -84,7 +70,7 @@ def save_events(block, trigger, group):
         exp_starts.references.append(da)
         corner_events.references.append(da)
 
-
+   
 def write_trigger_signal(block, trigger, time, da_group):
     trigger_da = block.create_data_array("trigger signal", "nix.eeg.trigger",
                                          data=trigger.astype(np.double))
@@ -102,24 +88,9 @@ def write_trigger_signal(block, trigger, time, da_group):
     tag.create_feature(trigger_da, nix.LinkType.Tagged)
 
 
-def write_session_metadata(nixfile, block):
-    rec_sec = nixfile.create_section(block.name, "recording")
-    rec_sec["experimenter"] = "John Doe"
-    rec_sec["startDate"] = "-".join([block.name[:4], block.name[4:6], block.name[6:8]])
-    block.metadata = rec_sec
-    write_subject_metadata(rec_sec, "Jane Doe")
-
-
-def write_subject_metadata(recording_session, name, species="homo sapiens"):
-    recording_session["subject"] = nix.S("subject")
-    recording_session["subject"]["name"] = name
-    recording_session["subject"]["species"] = species
-
-
 def convert(time, trigger, data, parts, sr):
     f = nix.File.open(parts[0] + ".nix", nix.FileMode.Overwrite)
     b = f.create_block(parts[0], "nix.eeg.session")
-    write_session_metadata(f, b)
     g = write_channel_data(b, data, time, sr)
     write_trigger_signal(b, trigger, time, g)
     save_events(b, trigger, g)
@@ -132,9 +103,10 @@ def load_data(filename):
     name, ext = os.path.splitext(full_name)
     file_parts = name.split("_")
     pattern = "_".join(file_parts[:-1])
-    files = glob.glob(os.path.join(folder, pattern + "*"))
+    files = glob.glob(os.path.join(folder, pattern + "*.mat"))
     combined_data = None
-    for f in files:
+    for f in sorted(files):
+        print("Loading file %s" % f, file=sys.stderr)
         data = scio.matlab.loadmat(f)
         y = np.squeeze(data["y"])
         if combined_data is None:
